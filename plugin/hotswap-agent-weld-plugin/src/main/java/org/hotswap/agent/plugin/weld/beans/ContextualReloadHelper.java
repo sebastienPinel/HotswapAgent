@@ -18,13 +18,13 @@
  */
 package org.hotswap.agent.plugin.weld.beans;
 
-import java.lang.reflect.Field;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
+import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.context.spi.Context;
 import javax.enterprise.context.spi.Contextual;
+import javax.inject.Singleton;
 
 import org.hotswap.agent.logging.AgentLogger;
 import org.jboss.weld.bean.ManagedBean;
@@ -38,16 +38,21 @@ public class ContextualReloadHelper {
 
     private static AgentLogger LOGGER = AgentLogger.getLogger(ContextualReloadHelper.class);
 
-    public static void reload(WeldHotswapContext ctx) {
-        Set<Contextual<Object>> beans = ctx.$$ha$getBeansToReloadWeld();
+    public static <T> void reload(WeldHotswapContext ctx) {
+        Set<Contextual<T>> beans = ctx.$$ha$getBeansToReloadWeld();
 
         if (beans != null && !beans.isEmpty()) {
             LOGGER.debug("Starting re-loading Contextuals in {}, {}", ctx, beans.size());
 
-            Iterator<Contextual<Object>> it = beans.iterator();
+            Iterator<Contextual<T>> it = beans.iterator();
             while (it.hasNext()) {
-                Contextual<Object> managedBean = it.next();
-                destroy(ctx, managedBean);
+                final Contextual<T> managedBean = it.next();
+                final Context cdiCtx = (Context) ctx;
+                if (cdiCtx.getScope().equals(ApplicationScoped.class) || cdiCtx.getScope().equals(Singleton.class)){
+                    reinitialize(cdiCtx, managedBean);
+                } else {
+                    destroy(ctx, managedBean);
+                }
             }
             beans.clear();
             LOGGER.debug("Finished re-loading Contextuals in {}", ctx);
@@ -61,21 +66,18 @@ public class ContextualReloadHelper {
      * @param managedBean
      * @return
      */
-    public static boolean addToReloadSet(Context ctx,  Contextual<Object> managedBean)  {
-        try {
-            LOGGER.debug("Adding bean in '{}' : {}", ctx.getClass(), managedBean);
-            Field toRedefine = ctx.getClass().getDeclaredField("$$ha$toReloadWeld");
-            Set toReload = Set.class.cast(toRedefine.get(ctx));
-            if (toReload == null) {
-                toReload = new HashSet();
-                toRedefine.set(ctx, toReload);
-            }
-            toReload.add(managedBean);
-            return true;
-        } catch(Exception e) {
-            LOGGER.warning("Context {} is not patched. Can not add {} to reload set", e, ctx, managedBean);
+    public static <T> boolean addToReloadSet(final Context ctx,  final Contextual<T> managedBean)  {
+        if (!WeldHotswapContext.class.isAssignableFrom(ctx.getClass())) {
+            LOGGER.warning("Context {} is not patched. Can not add {} to reload set", ctx, managedBean);
+            return false;
         }
-        return false;
+
+        LOGGER.debug("Adding bean in '{}' : {}", ctx.getClass(), managedBean);
+        final WeldHotswapContext context = (WeldHotswapContext) ctx;
+        context.$$ha$addBeanToReloadWeld(managedBean);
+        // Eagerly reloading weld
+        context.isActive();
+        return true;
     }
 
     /**
@@ -84,10 +86,10 @@ public class ContextualReloadHelper {
      * @param ctx
      * @param managedBean
      */
-    public static void destroy(WeldHotswapContext ctx, Contextual<?> managedBean ) {
+    public static <T> void destroy(final WeldHotswapContext ctx, Contextual<T> managedBean ) {
         try {
             LOGGER.debug("Removing Contextual from Context........ {},: {}", managedBean, ctx);
-            Object get = ctx.get(managedBean);
+            T get = ctx.get(managedBean);
             if (get != null) {
                 ctx.destroy(managedBean);
             }
@@ -97,7 +99,7 @@ public class ContextualReloadHelper {
                 ctx.destroy(managedBean);
             }
         } catch (Exception e) {
-            LOGGER.error("Error destoying bean {},: {}", e, managedBean, ctx);
+            LOGGER.error("Error destroying bean {},: {}", e, managedBean, ctx);
         }
     }
 
@@ -107,11 +109,11 @@ public class ContextualReloadHelper {
      * @param ctx
      * @param managedBean
      */
-    public static void reinitialize(Context ctx, Contextual<Object> contextual) {
+    public static <T> void reinitialize(Context ctx, Contextual<T> contextual) {
         try {
-            ManagedBean<Object> managedBean = ManagedBean.class.cast(contextual);
+            ManagedBean<T> managedBean = ManagedBean.class.cast(contextual);
             LOGGER.debug("Re-Initializing........ {},: {}", managedBean, ctx);
-            Object get = ctx.get(managedBean);
+            T get = ctx.get(managedBean);
             if (get != null) {
                 LOGGER.debug("Bean injection points are reinitialized '{}'", managedBean);
                 managedBean.getProducer().inject(get, managedBean.getBeanManager().createCreationalContext(managedBean));

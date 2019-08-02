@@ -40,7 +40,7 @@ public interface WeldHotswapContext {
      * @param contextual the contextual type
      * @throws ContextNotActiveException if the context is not active
      */
-    void destroy(Contextual<?> contextual);
+    <T> void destroy(Contextual<T> contextual);
 
     /**
      * Determines if the context object is active.
@@ -61,21 +61,21 @@ public interface WeldHotswapContext {
      *
      * @throws ContextNotActiveException if the context is not active
      */
-    public <T> T get(Contextual<T> contextual);
+    <T> T get(Contextual<T> contextual);
 
     /**
      * Adds a bean to the set of beans to be redefined.
      *
      * @param bean
      */
-    void $$ha$addBeanToReloadWeld(Contextual<Object> bean);
+    <T> void $$ha$addBeanToReloadWeld(Contextual<T> bean);
 
     /**
      * Gets the Weld beans to be reloaded. The naming must be Weld-specific since OWB plugin patches the contexts as well.
      *
      * @return the Weld beans to be reloaded
      */
-    Set<Contextual<Object>> $$ha$getBeansToReloadWeld();
+   <T> Set<Contextual<T>> $$ha$getBeansToReloadWeld();
 
     /**
      * Redefines the beans which have changed. The naming must be Weld-specific since OWB plugin patches the contexts as well.
